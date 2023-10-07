@@ -5,6 +5,7 @@ import arcpy
 import json
 
 from arcgis.apps.storymap import Map
+from arcpy._mp import Layer
 
 # APRX_PATH = r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\arcpy_env\MyProject2\MyProject2.aprx'
 JSON_PATH = r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\arcpy_env\aprx_data2.json'
@@ -59,7 +60,9 @@ class AprxProject:
         'GroupLayer': {
             'name': 'layer.longName',
             'transparency': 'layer.transparency',
-            'visible': 'layer.visible'
+            'visible': 'layer.visible',
+            'layers': '{}',
+            'subgroups': '{}'
         }
     }
 
@@ -97,56 +100,7 @@ class AprxProject:
             aprx_properties[arcgis_map.name] = aprx_properties_for_map
         return aprx_properties
 
-    def set_group_name(self, group_name, layer, type_of_layer, dict_type_of_layer, layers_from_map, layer_iter):
-        if layer.isGroupLayer:
-            group_name = layer.longName
-            type_of_layer = self._get_type_of_layer(layer)
-            dict_type_of_layer = self.dict_properties_for_layers.get(type_of_layer)
-            if dict_type_of_layer:
-                layers_from_map.append({type_of_layer: {
-                    'name': eval(dict_type_of_layer.get('name')),
-                    'transparency': eval(dict_type_of_layer.get('transparency')),
-                    'visible': eval(dict_type_of_layer.get('visible')),
-                    'layers': {}
-                }})
-            # layer_iter += 1
-            return group_name, type_of_layer, dict_type_of_layer, layers_from_map, layer_iter
-        elif group_name and group_name in layer.longName.split('\\')[0]:
-            group_name = layer.longName.split('\\')[0]
-        else:
-            group_name = ''
-        return group_name, type_of_layer, dict_type_of_layer, layers_from_map, layer_iter
-
-    def _update_aprx_properties(self, type_of_layer, group_name, layer, layers_from_map, layer_iter, list_layers):
-        dict_type_of_layer = self.dict_properties_for_layers.get(type_of_layer)
-        group_name, type_of_layer, dict_type_of_layer, layers_from_map, layer_iter = \
-            self.set_group_name(group_name, layer, type_of_layer, dict_type_of_layer, layers_from_map,
-                                layer_iter)
-        if layer.isGroupLayer or not layers_from_map:
-            layer_iter += 1
-            # print(layer_iter, '126')
-            return type_of_layer, group_name, layer, layers_from_map, layer_iter
-        proper_dict_to_set = f'''layers_from_map.append'''
-        if 'GroupLayer' in layers_from_map[-1].keys() and \
-                group_name == layers_from_map[-1].get('GroupLayer').get('name'):
-            proper_dict_to_set = f'''list(layers_from_map[-1].values())[-1].get('layers').update'''
-        dict1 = {}
-        if dict_type_of_layer:
-            for key, value in dict_type_of_layer.items():
-                dict1[key] = eval(value)
-            if type_of_layer == 'WMS':
-                layer_iter += 1
-                # print(layer_iter, '139')
-                layer = list_layers[layer_iter]
-                dict1.update({'name': layer.name})
-                print(layer_iter)
-                print(layer.name)
-            eval(proper_dict_to_set)({type_of_layer: dict1})
-        layer_iter += 1
-        # print(layer_iter, '146')
-        return type_of_layer, group_name, layer, layers_from_map, layer_iter
-
-    def _get_type_of_layer(self, layer):
+    def _get_type_of_layer(self, layer: Layer) -> str:
         cim_type_of_layer = layer.getDefinition('V3').__str__().split('.CIM')[-1].split()[0]
         type_of_layer = self.dict_types_of_layers.get(cim_type_of_layer)
         if isinstance(type_of_layer, tuple):
@@ -157,30 +111,47 @@ class AprxProject:
         for arcgis_map, aprx_property in zip(self.arcgis_maps, self.aprx_properties):
             layers_from_map = []
             list_layers = arcgis_map.listLayers()
-            layer_iter = 0
-            group_name = ''
-            while layer_iter < len(list_layers):
-                layer = list_layers[layer_iter]
+            counter = -1
+            self._current_dict = {}
+            for layer in list_layers:
+                counter += 1
                 type_of_layer = self._get_type_of_layer(layer)
-                # print(layer, type_of_layer)
-                # if hasattr(list_layers[layer_iter + 2], 'dataSource'):
-                #     print(layer_iter)
-                #     print(list_layers[layer_iter + 2].dataSource)
-                if (len(list_layers) > layer_iter + 2 and not any((layer.isBasemapLayer, layer.isFeatureLayer,
-                                                                   layer.isNetworkAnalystLayer,
-                                                                   layer.isNetworkDatasetLayer,
-                                                                   layer.isRasterLayer,
-                                                                   layer.isSceneLayer))
-                        and not hasattr(list_layers[layer_iter + 2], 'dataSource')):
-                    # print('tutaj')
-                    layer_iter += 2
+                self._current_dict = {}
+                dict_type_of_layer = self.dict_properties_for_layers.get(type_of_layer)
+                if all((type_of_layer == 'WMS', '\\' in layer.longName, not hasattr(layer, 'dataSource'))):
+                    layers_from_map[-1].get(type_of_layer)['name'] = layer.name
                     continue
-                type_of_layer, group_name, layer, layers_from_map, layer_iter = \
-                    self._update_aprx_properties(type_of_layer, group_name, layer, layers_from_map, layer_iter,
-                                                 list_layers)
-                # print(layer_iter, '181')
-                continue
-
+                if layer.isGroupLayer and '\\' in layer.longName:
+                    temp_dict = {}
+                    if dict_type_of_layer:
+                        for key, value in dict_type_of_layer.items():
+                            temp_dict[key] = eval(value)
+                        self._current_dict[type_of_layer] = temp_dict
+                        eval_str = f'layers_from_map[-1]'
+                        for counter in range(layer.longName.count('\\')):
+                            eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
+                        proper_dict = eval(eval_str)
+                        proper_dict.update(self._current_dict)
+                        continue
+                if '\\' in layer.longName and not layer.isGroupLayer:
+                    temp_dict = {}
+                    if dict_type_of_layer:
+                        for key, value in dict_type_of_layer.items():
+                            temp_dict[key] = eval(value)
+                        self._current_dict[type_of_layer] = temp_dict
+                        eval_str = f'layers_from_map[-1]'
+                        for counter in range(layer.longName.count('\\') - 1):
+                            eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
+                        eval_str = f'''list({eval_str}.values())[0].get('layers')'''
+                        proper_dict = eval(eval_str)
+                        proper_dict.update(self._current_dict)
+                        continue
+                temp_dict = {}
+                if dict_type_of_layer:
+                    for key, value in dict_type_of_layer.items():
+                        temp_dict[key] = eval(value)
+                    self._current_dict[type_of_layer] = temp_dict
+                    layers_from_map.append(self._current_dict)
             self.aprx_properties[aprx_property]['map_layers'] = layers_from_map
 
     def _dump_aprx_properties_to_json(self, json_path):
