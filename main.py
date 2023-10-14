@@ -27,42 +27,48 @@ class AprxProject:
             'name': 'layer.name',
             'crs': 'arcpy.Describe(layer).spatialReference.PCSCode',
             'transparency': 'layer.transparency',
-            'visible': 'layer.visible'
+            'visible': 'layer.visible',
+            'supergroup_id': ''
         },
         'Shape File': {
             'source': 'layer.dataSource',
             'name': 'layer.name',
             'crs': 'arcpy.Describe(layer).spatialReference.PCSCode',
             'transparency': 'layer.transparency',
-            'visible': 'layer.visible'
+            'visible': 'layer.visible',
+            'supergroup_id': ''
         },
         'Raster': {
             'source': 'layer.dataSource',
             'name': 'layer.name',
             'crs': 'arcpy.Describe(layer).spatialReference.PCSCode',
             'transparency': 'layer.transparency',
-            'visible': 'layer.visible'
+            'visible': 'layer.visible',
+            'supergroup_id': ''
         },
         'WMS': {
             'source': 'layer.dataSource',
             'name': 'layer.name',
-            'crs': 'self.aprx_properties.get(self._arcgis_map_name).get("map_crs")',
+            'crs': "int('2180')",
             'transparency': 'layer.transparency',
-            'visible': 'layer.visible'
+            'visible': 'layer.visible',
+            'supergroup_id': ''
         },
         'WMTS': {
             'source': 'layer.dataSource',
             'name': 'layer.name',
-            'crs': 'self.aprx_properties.get(self._arcgis_map_name).get("map_crs")',
-            'transparency': 'layer.transparency',
-            'visible': 'layer.visible'
-        },
-        'GroupLayer': {
-            'name': 'layer.longName',
+            'crs': "int('2180')",
             'transparency': 'layer.transparency',
             'visible': 'layer.visible',
-            'layers': '{}',
-            'subgroups': '{}'
+            'supergroup_id': ''
+        },
+        'GroupLayer': {
+            'name': 'layer.name',
+            'transparency': 'layer.transparency',
+            'visible': 'layer.visible',
+            'supergroup': f'''layer.longName.rstrip(layer.name).rstrip('\\\\')''',
+            'id': f'''layer.URI.split('/')[1].split('.')[0]''',
+            'longName': 'layer.longName'
         }
     }
 
@@ -102,10 +108,40 @@ class AprxProject:
 
     def _get_type_of_layer(self, layer: Layer) -> str:
         cim_type_of_layer = layer.getDefinition('V3').__str__().split('.CIM')[-1].split()[0]
-        type_of_layer = self.dict_types_of_layers.get(cim_type_of_layer)
-        if isinstance(type_of_layer, tuple):
-            type_of_layer = layer.connectionProperties.get('workspace_factory')
+        type_of_layer = None
+        if not layer.isBasemapLayer:
+            type_of_layer = self.dict_types_of_layers.get(cim_type_of_layer)
+            if isinstance(type_of_layer, tuple):
+                type_of_layer = layer.connectionProperties.get('workspace_factory')
         return type_of_layer
+
+    def _update_dict(self, layer, type_of_layer, dict_type_of_layer, layers_from_map):
+        temp_dict = {}
+        if dict_type_of_layer:
+            for key, value in dict_type_of_layer.items():
+                if all((key in 'supergroup', '\\' not in layer.longName)):
+                    continue
+                if value == '':
+                    temp_dict[key] = ''
+                    continue
+                temp_dict[key] = eval(value)
+            # if type_of_layer not in 'GroupLayer' and '\\' in layer.longName:
+            #     list_of_groups = [group_dict for group_dict in layers_from_map
+            #                       if list(group_dict.keys())[0] in 'GroupLayer']
+            #     for group_dict in reversed(list_of_groups):
+            #         long_name = group_dict.get('GroupLayer').get('longName')
+            #         if long_name == layer.longName.strip(f'{layer.name}').strip('\\'):
+            #             temp_dict['supergroup_id'] = group_dict.get('GroupLayer').get('id')
+            #             break
+            if '\\' in layer.longName:
+                list_of_groups = [group_dict for group_dict in layers_from_map
+                                  if list(group_dict.keys())[0] in 'GroupLayer']
+                for group_dict in reversed(list_of_groups):
+                    long_name = group_dict.get('GroupLayer').get('longName')
+                    if long_name == layer.longName.strip(f'{layer.name}').strip('\\'):
+                        temp_dict['supergroup_id'] = group_dict.get('GroupLayer').get('id')
+                        break
+            self._current_dict[type_of_layer] = temp_dict
 
     def _get_layers_from_map_and_update_aprx_properties(self) -> None:
         for arcgis_map, aprx_property in zip(self.arcgis_maps, self.aprx_properties):
@@ -114,6 +150,7 @@ class AprxProject:
             counter = -1
             self._current_dict = {}
             for layer in list_layers:
+                # print(layer.name)
                 counter += 1
                 type_of_layer = self._get_type_of_layer(layer)
                 self._current_dict = {}
@@ -121,37 +158,36 @@ class AprxProject:
                 if all((type_of_layer == 'WMS', '\\' in layer.longName, not hasattr(layer, 'dataSource'))):
                     layers_from_map[-1].get(type_of_layer)['name'] = layer.name
                     continue
-                if layer.isGroupLayer and '\\' in layer.longName:
-                    temp_dict = {}
-                    if dict_type_of_layer:
-                        for key, value in dict_type_of_layer.items():
-                            temp_dict[key] = eval(value)
-                        self._current_dict[type_of_layer] = temp_dict
-                        eval_str = f'layers_from_map[-1]'
-                        for counter in range(layer.longName.count('\\')):
-                            eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
-                        proper_dict = eval(eval_str)
-                        proper_dict.update(self._current_dict)
+                if all((type_of_layer == 'WMS', '\\' in layer.longName, hasattr(layer, 'dataSource'),
+                        layers_from_map)):
+                    if layers_from_map[-1].get(type_of_layer):
+                        layers_from_map[-1].get(type_of_layer)['name'] = layer.name
                         continue
-                if '\\' in layer.longName and not layer.isGroupLayer:
-                    temp_dict = {}
-                    if dict_type_of_layer:
-                        for key, value in dict_type_of_layer.items():
-                            temp_dict[key] = eval(value)
-                        self._current_dict[type_of_layer] = temp_dict
-                        eval_str = f'layers_from_map[-1]'
-                        for counter in range(layer.longName.count('\\') - 1):
-                            eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
-                        eval_str = f'''list({eval_str}.values())[0].get('layers')'''
-                        proper_dict = eval(eval_str)
-                        proper_dict.update(self._current_dict)
-                        continue
-                temp_dict = {}
-                if dict_type_of_layer:
-                    for key, value in dict_type_of_layer.items():
-                        temp_dict[key] = eval(value)
-                    self._current_dict[type_of_layer] = temp_dict
-                    layers_from_map.append(self._current_dict)
+                # if layer.isGroupLayer and '\\' in layer.longName:
+                #     self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
+                #     layers_from_map.append(self._current_dict)
+                #     # eval_str = f'layers_from_map[-1]'
+                #     # for counter in range(layer.longName.count('\\')):
+                #     #     eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
+                #     # proper_dict = eval(eval_str)
+                #     # proper_dict.update(self._current_dict)
+                #     continue
+                # if layer.isGroupLayer:
+                #     self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
+                #     layers_from_map.append(self._current_dict)
+                #     continue
+                # if '\\' in layer.longName and not layer.isGroupLayer:
+                #     self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
+                #     layers_from_map.append(self._current_dict)
+                #     # eval_str = f'layers_from_map[-1]'
+                #     # for counter in range(layer.longName.count('\\') - 1):
+                #     #     eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
+                #     # eval_str = f'''list({eval_str}.values())[0].get('layers')'''
+                #     # proper_dict = eval(eval_str)
+                #     # proper_dict.update(self._current_dict)
+                #     continue
+                self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
+                layers_from_map.append(self._current_dict)
             self.aprx_properties[aprx_property]['map_layers'] = layers_from_map
 
     def _dump_aprx_properties_to_json(self, json_path):
