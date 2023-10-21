@@ -1,19 +1,16 @@
+import subprocess
 from ast import literal_eval
 from typing import List, Dict, Any
 
 import arcpy
 import json
 
-from arcgis.apps.storymap import Map
 from arcpy._mp import Layer
 
-# APRX_PATH = r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\arcpy_env\MyProject2\MyProject2.aprx'
-JSON_PATH = r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\arcpy_env\aprx_data2.json'
 APRX_PATH = r"C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\arcpy_env\MyProject2\MyProject2.aprx"
 
 
 class AprxProject:
-    arcgis_project = arcpy.mp.ArcGISProject(APRX_PATH)
     dict_types_of_layers = {
         'GroupLayer': 'GroupLayer',
         'WMSLayer': 'WMS',
@@ -66,17 +63,19 @@ class AprxProject:
             'name': 'layer.name',
             'transparency': 'layer.transparency',
             'visible': 'layer.visible',
-            'supergroup': f'''layer.longName.rstrip(layer.name).rstrip('\\\\')''',
+            'supergroup_id': '',
             'id': f'''layer.URI.split('/')[1].split('.')[0]''',
             'longName': 'layer.longName'
         }
     }
 
-    def __init__(self):
+    def __init__(self, aprx_file_path, qgis_folder_path):
+        self.aprx_file_path = aprx_file_path
+        self.arcgis_project = arcpy.mp.ArcGISProject(self.aprx_file_path)
         self.arcgis_maps = self._get_arcgis_maps()
         self.aprx_properties = self._get_properties_from_map_and_update_aprx_properties()
         self._get_layers_from_map_and_update_aprx_properties()
-        self._dump_aprx_properties_to_json(JSON_PATH)
+        self._dump_aprx_properties_to_json(f'{qgis_folder_path}\\aprx_path.json')
 
     @property
     def arcgis_map_name(self):
@@ -86,7 +85,7 @@ class AprxProject:
     def arcgis_map_name(self, var):
         self._arcgis_map_name = var
 
-    def _get_arcgis_maps(self) -> List[Map]:
+    def _get_arcgis_maps(self) -> List:
         arcgis_maps = []
         for aprx_map in self.arcgis_project.listMaps():
             arcgis_maps.append(aprx_map)
@@ -125,20 +124,12 @@ class AprxProject:
                     temp_dict[key] = ''
                     continue
                 temp_dict[key] = eval(value)
-            # if type_of_layer not in 'GroupLayer' and '\\' in layer.longName:
-            #     list_of_groups = [group_dict for group_dict in layers_from_map
-            #                       if list(group_dict.keys())[0] in 'GroupLayer']
-            #     for group_dict in reversed(list_of_groups):
-            #         long_name = group_dict.get('GroupLayer').get('longName')
-            #         if long_name == layer.longName.strip(f'{layer.name}').strip('\\'):
-            #             temp_dict['supergroup_id'] = group_dict.get('GroupLayer').get('id')
-            #             break
             if '\\' in layer.longName:
                 list_of_groups = [group_dict for group_dict in layers_from_map
-                                  if list(group_dict.keys())[0] in 'GroupLayer']
+                                  if bool(group_dict.keys()) and list(group_dict.keys())[0] in 'GroupLayer']
                 for group_dict in reversed(list_of_groups):
                     long_name = group_dict.get('GroupLayer').get('longName')
-                    if long_name == layer.longName.strip(f'{layer.name}').strip('\\'):
+                    if long_name == layer.longName.rstrip(f'{layer.name}').strip('\\'):
                         temp_dict['supergroup_id'] = group_dict.get('GroupLayer').get('id')
                         break
             self._current_dict[type_of_layer] = temp_dict
@@ -150,7 +141,6 @@ class AprxProject:
             counter = -1
             self._current_dict = {}
             for layer in list_layers:
-                # print(layer.name)
                 counter += 1
                 type_of_layer = self._get_type_of_layer(layer)
                 self._current_dict = {}
@@ -163,29 +153,6 @@ class AprxProject:
                     if layers_from_map[-1].get(type_of_layer):
                         layers_from_map[-1].get(type_of_layer)['name'] = layer.name
                         continue
-                # if layer.isGroupLayer and '\\' in layer.longName:
-                #     self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
-                #     layers_from_map.append(self._current_dict)
-                #     # eval_str = f'layers_from_map[-1]'
-                #     # for counter in range(layer.longName.count('\\')):
-                #     #     eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
-                #     # proper_dict = eval(eval_str)
-                #     # proper_dict.update(self._current_dict)
-                #     continue
-                # if layer.isGroupLayer:
-                #     self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
-                #     layers_from_map.append(self._current_dict)
-                #     continue
-                # if '\\' in layer.longName and not layer.isGroupLayer:
-                #     self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
-                #     layers_from_map.append(self._current_dict)
-                #     # eval_str = f'layers_from_map[-1]'
-                #     # for counter in range(layer.longName.count('\\') - 1):
-                #     #     eval_str = f'''list({eval_str}.values())[0].get('subgroups')'''
-                #     # eval_str = f'''list({eval_str}.values())[0].get('layers')'''
-                #     # proper_dict = eval(eval_str)
-                #     # proper_dict.update(self._current_dict)
-                #     continue
                 self._update_dict(layer, type_of_layer, dict_type_of_layer, layers_from_map)
                 layers_from_map.append(self._current_dict)
             self.aprx_properties[aprx_property]['map_layers'] = layers_from_map
@@ -195,9 +162,19 @@ class AprxProject:
             json.dump(self.aprx_properties, write_file)
 
 
-def main():
-    AprxProject()
+def run_aprx_converter():
+    from os import path
+    import sys
+    sys.path.append(path.abspath(r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz'))
+    from qgis import gui
+    arcgis_file_path, qgis_folder_path, qgis_file_name = gui.vals
+    AprxProject(arcgis_file_path, qgis_folder_path)
+    with open(r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\qgis\temp_text_file.txt', 'w') as \
+            temp_text_file:
+        temp_text_file.write(f'{qgis_folder_path}\n{qgis_file_name}')
+    subprocess.run([r'C:\Program Files\QGIS 3.16\bin\python-qgis-ltr.bat',
+                    r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\qgis\qgis_main.py'])
 
 
 if __name__ == '__main__':
-    main()
+    run_aprx_converter()
