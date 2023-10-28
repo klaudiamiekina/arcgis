@@ -1,5 +1,5 @@
 import subprocess
-from ast import literal_eval
+import sys
 from typing import List, Dict, Any
 
 import arcpy
@@ -8,7 +8,7 @@ import json
 import os
 from arcpy._mp import Layer
 
-from additional_functions import dump_aprx_properties_to_json
+from additional_functions import *
 
 
 class AprxProject:
@@ -167,20 +167,15 @@ class AprxProject:
 
 class AprxConverterGui:
     def __init__(self):
-        pass
+        self.qgis_project_dir = find_qgis_project_dir()
+        self.arcgis_project_dir = os.getcwd()
+        self.qgis_instance_dir = find_qgis_instance_dir()
 
     def run_aprx_converter_gui(self):
-        from os import path
-        import sys
-        import additional_functions
-        self.qgis_project_dir = additional_functions.find_qgis_project_dir()
-        self.arcgis_project_dir = os.getcwd()
-        self.qgis_instance_dir = additional_functions.find_qgis_instance_dir()
         if bool(self.qgis_project_dir):
-            sys.path.append(path.abspath(self.qgis_project_dir))
+            sys.path.append(os.path.abspath(self.qgis_project_dir))
             import converter_gui
-            self.converter_gui = converter_gui
-            self.exec_dialog = self.converter_gui.ExecDialog(self, self.qgis_instance_dir)
+            self.exec_dialog = converter_gui.ExecDialog(self, self.qgis_instance_dir)
             self.exec_dialog.exec_dlg()
 
     def run_converter_qgis(self):
