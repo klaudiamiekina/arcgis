@@ -5,9 +5,10 @@ from typing import List, Dict, Any
 import arcpy
 import json
 
+import os
 from arcpy._mp import Layer
 
-APRX_PATH = r"C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\arcpy_env\MyProject2\MyProject2.aprx"
+from additional_functions import dump_aprx_properties_to_json
 
 
 class AprxProject:
@@ -69,13 +70,13 @@ class AprxProject:
         }
     }
 
-    def __init__(self, aprx_file_path, qgis_folder_path):
+    def __init__(self, aprx_file_path, arcgis_project_properties):
         self.aprx_file_path = aprx_file_path
         self.arcgis_project = arcpy.mp.ArcGISProject(self.aprx_file_path)
         self.arcgis_maps = self._get_arcgis_maps()
         self.aprx_properties = self._get_properties_from_map_and_update_aprx_properties()
         self._get_layers_from_map_and_update_aprx_properties()
-        self._dump_aprx_properties_to_json(f'{qgis_folder_path}\\aprx_path.json')
+        dump_aprx_properties_to_json(f'{arcgis_project_properties}\\arcgis_project_properties.json', self.aprx_properties)
 
     @property
     def arcgis_map_name(self):
@@ -116,6 +117,12 @@ class AprxProject:
 
     def _update_dict(self, layer, type_of_layer, dict_type_of_layer, layers_from_map):
         temp_dict = {}
+        if not dict_type_of_layer:
+            if hasattr(layer, 'name'):
+                self._current_dict['unknown_layer'] = {'name': layer.name}
+                return
+            self._current_dict['unknown_layer'] = {}
+            return
         if dict_type_of_layer:
             for key, value in dict_type_of_layer.items():
                 if all((key in 'supergroup', '\\' not in layer.longName)):
@@ -157,24 +164,39 @@ class AprxProject:
                 layers_from_map.append(self._current_dict)
             self.aprx_properties[aprx_property]['map_layers'] = layers_from_map
 
-    def _dump_aprx_properties_to_json(self, json_path):
-        with open(json_path, 'w') as write_file:
-            json.dump(self.aprx_properties, write_file)
 
+class AprxConverterGui:
+    def __init__(self):
+        pass
 
-def run_aprx_converter():
-    from os import path
-    import sys
-    sys.path.append(path.abspath(r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz'))
-    from qgis import gui
-    arcgis_file_path, qgis_folder_path, qgis_file_name = gui.vals
-    AprxProject(arcgis_file_path, qgis_folder_path)
-    with open(r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\qgis\temp_text_file.txt', 'w') as \
-            temp_text_file:
-        temp_text_file.write(f'{qgis_folder_path}\n{qgis_file_name}')
-    subprocess.run([r'C:\Program Files\QGIS 3.16\bin\python-qgis-ltr.bat',
-                    r'C:\Users\klaud\OneDrive\Dokumenty\geoinformatyka\III_rok\praca_inz\qgis\qgis_main.py'])
+    def run_aprx_converter_gui(self):
+        from os import path
+        import sys
+        import additional_functions
+        self.qgis_project_dir = additional_functions.find_qgis_project_dir()
+        self.arcgis_project_dir = os.getcwd()
+        self.qgis_instance_dir = additional_functions.find_qgis_instance_dir()
+        if bool(self.qgis_project_dir):
+            sys.path.append(path.abspath(self.qgis_project_dir))
+            import converter_gui
+            self.converter_gui = converter_gui
+            self.exec_dialog = self.converter_gui.ExecDialog(self, self.qgis_instance_dir)
+            self.exec_dialog.exec_dlg()
+
+    def run_converter_qgis(self):
+        with open(f'{self.arcgis_project_dir}\\properties_for_qgis_project.json', 'r') as f:
+            properties_for_qgis_project_dict = json.load(f)
+        arcgis_file_path = properties_for_qgis_project_dict.get('arcgis_file_path')
+        AprxProject(arcgis_file_path, self.arcgis_project_dir)
+
+        qgis_ltr_bat_file = '\\'.join((self.qgis_instance_dir, 'bin\\python-qgis-ltr.bat'))
+        if os.path.isfile(qgis_ltr_bat_file):
+            subprocess.run([qgis_ltr_bat_file, f'{self.qgis_project_dir}\\main.py'])
+            self.exec_dialog.window.add_label_after_conversion()
+
+    def dump_aprx_properties_to_json(self, json_path, aprx_properties_dict):
+        dump_aprx_properties_to_json(json_path, aprx_properties_dict)
 
 
 if __name__ == '__main__':
-    run_aprx_converter()
+    AprxConverterGui().run_aprx_converter_gui()
