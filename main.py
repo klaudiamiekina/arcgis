@@ -3,9 +3,7 @@ import sys
 from typing import List, Dict, Any
 
 import arcpy
-import json
 
-import os
 from arcpy._mp import Layer
 
 from additional_functions import *
@@ -76,7 +74,8 @@ class AprxProject:
         self.arcgis_maps = self._get_arcgis_maps()
         self.aprx_properties = self._get_properties_from_map_and_update_aprx_properties()
         self._get_layers_from_map_and_update_aprx_properties()
-        dump_aprx_properties_to_json(f'{arcgis_project_properties}\\arcgis_project_properties.json', self.aprx_properties)
+        dump_aprx_properties_to_json(f'{arcgis_project_properties}\\arcgis_project_properties.json',
+                                     self.aprx_properties)
 
     @property
     def arcgis_map_name(self):
@@ -174,6 +173,8 @@ class AprxConverterGui:
     def run_aprx_converter_gui(self):
         if bool(self.qgis_project_dir):
             sys.path.append(os.path.abspath(self.qgis_project_dir))
+            import installer
+            installer.install_pyqt5()
             import converter_gui
             self.exec_dialog = converter_gui.ExecDialog(self, self.qgis_instance_dir)
             self.exec_dialog.exec_dlg()
@@ -184,7 +185,7 @@ class AprxConverterGui:
         arcgis_file_path = properties_for_qgis_project_dict.get('arcgis_file_path')
         AprxProject(arcgis_file_path, self.arcgis_project_dir)
 
-        qgis_ltr_bat_file = '\\'.join((self.qgis_instance_dir, 'bin\\python-qgis-ltr.bat'))
+        qgis_ltr_bat_file = '\\'.join((self.qgis_instance_dir, 'python-qgis-ltr.bat'))
         if os.path.isfile(qgis_ltr_bat_file):
             subprocess.run([qgis_ltr_bat_file, f'{self.qgis_project_dir}\\main.py'])
             self.exec_dialog.window.add_label_after_conversion()

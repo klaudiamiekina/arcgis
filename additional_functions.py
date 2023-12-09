@@ -5,7 +5,7 @@ import os
 def find_qgis_instance_dir(file_name='python-qgis-ltr.bat'):
     for root, dirs, files in os.walk('/'):
         if all((file_name in files, 'QGIS' in os.path.abspath(os.path.join(root, file_name)))):
-            return os.path.dirname(root)
+            return os.path.abspath(root)
 
 
 def find_qgis_project_dir():
