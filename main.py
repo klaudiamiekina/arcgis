@@ -144,10 +144,8 @@ class AprxProject:
         for arcgis_map, aprx_property in zip(self.arcgis_maps, self.aprx_properties):
             layers_from_map = []
             list_layers = arcgis_map.listLayers()
-            counter = -1
             self._current_dict = {}
             for layer in list_layers:
-                counter += 1
                 type_of_layer = self._get_type_of_layer(layer)
                 self._current_dict = {}
                 dict_type_of_layer = self.dict_properties_for_layers.get(type_of_layer)
